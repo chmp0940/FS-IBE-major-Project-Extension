@@ -1,0 +1,41 @@
+{
+  "static": {
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "fpr": 0.0,
+    "tp": 15,
+    "fp": 0,
+    "tn": 20,
+    "fn": 0
+  },
+  "ml": {
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "fpr": 0.0,
+    "tp": 15,
+    "fp": 0,
+    "tn": 20,
+    "fn": 0
+  },
+  "ml_train_metrics": {
+    "iso_accuracy": 0.8677777777777778,
+    "iso_f1": 0.8330995792426368,
+    "iso_precision": 0.7191283292978208,
+    "iso_recall": 0.99,
+    "rf_accuracy": 1.0,
+    "rf_f1": 1.0,
+    "rf_precision": 1.0,
+    "rf_recall": 1.0,
+    "combined_accuracy": 1.0,
+    "combined_precision": 1.0,
+    "combined_recall": 1.0,
+    "combined_f1": 1.0
+  },
+  "ml_avg_inference_ms": 132.9123371380514,
+  "num_queries": 20,
+  "num_attacks": 15
+}
