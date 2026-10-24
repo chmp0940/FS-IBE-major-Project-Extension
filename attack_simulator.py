@@ -44,9 +44,87 @@ def _random_time_encoding():
     """Generate random time-of-day encoding (sine/cosine)."""
     hour = random.uniform(0, 24)
     return (
-        math.sin(2 * math.pi * hour / 24.0),
-        math.cos(2 * math.pi * hour / 24.0),
+        max(-1.0, min(1.0, math.sin(2 * math.pi * hour / 24.0))),
+        max(-1.0, min(1.0, math.cos(2 * math.pi * hour / 24.0))),
     )
+
+
+def _temporal_sample(kind, rng):
+    """Create one feature vector from a coherent synthetic device window."""
+    if kind == "normal":
+        rate = rng.lognormvariate(math.log(3.5), 0.55)
+        rate = min(rate, 18.0)
+        mismatch = rng.betavariate(1.2, 28.0)
+        sig_failure = rng.betavariate(1.0, 70.0) if rng.random() < 0.12 else 0.0
+        burst = rng.choices([1, 2, 3, 4], [60, 25, 10, 5])[0]
+        payload_sigma = rng.lognormvariate(math.log(8.0), 0.7)
+    elif kind == "replay":
+        rate = rng.lognormvariate(math.log(5.0), 0.65)
+        mismatch = rng.betavariate(3.0, 8.0)
+        sig_failure = rng.betavariate(1.0, 35.0)
+        burst = rng.choices([1, 2, 3, 5], [35, 35, 20, 10])[0]
+        payload_sigma = rng.lognormvariate(math.log(8.0), 0.8)
+    elif kind == "flood":
+        rate = rng.lognormvariate(math.log(35.0), 0.55)
+        mismatch = rng.betavariate(1.2, 12.0)
+        sig_failure = rng.betavariate(1.5, 12.0)
+        burst = rng.randint(8, 35)
+        payload_sigma = rng.lognormvariate(math.log(12.0), 0.7)
+    elif kind == "epoch_manipulation":
+        rate = rng.lognormvariate(math.log(5.0), 0.6)
+        mismatch = rng.betavariate(8.0, 5.0)
+        sig_failure = rng.betavariate(1.0, 18.0)
+        burst = rng.choices([1, 2, 3, 5], [35, 30, 25, 10])[0]
+        payload_sigma = rng.lognormvariate(math.log(12.0), 0.8)
+    elif kind == "sybil":
+        rate = rng.lognormvariate(math.log(14.0), 0.6)
+        mismatch = rng.betavariate(2.0, 10.0)
+        sig_failure = rng.betavariate(3.0, 10.0)
+        burst = rng.randint(3, 15)
+        payload_sigma = rng.lognormvariate(math.log(22.0), 0.7)
+    elif kind == "probing":
+        rate = rng.lognormvariate(math.log(2.0), 0.7)
+        mismatch = rng.betavariate(2.0, 12.0)
+        sig_failure = rng.betavariate(1.0, 35.0)
+        burst = rng.choices([1, 2, 3], [65, 25, 10])[0]
+        payload_sigma = rng.lognormvariate(math.log(35.0), 0.8)
+    else:
+        raise ValueError(f"Unknown traffic type: {kind}")
+
+    # Frequency and interval are generated from the same latent rate.
+    interval = max(0.05, min(90.0, 60.0 / max(rate, 0.1)))
+    interval *= rng.lognormvariate(0.0, 0.12)
+    frequency = max(0.1, min(120.0, 60.0 / interval * rng.lognormvariate(0.0, 0.08)))
+    hour = rng.uniform(0.0, 24.0)
+    sin_hour = math.sin(2 * math.pi * hour / 24.0)
+    cos_hour = math.cos(2 * math.pi * hour / 24.0)
+
+    return {
+        "query_frequency": frequency,
+        "epoch_mismatch_rate": max(0.0, min(1.0, mismatch)),
+        "sig_failure_rate": max(0.0, min(1.0, sig_failure)),
+        "inter_query_interval": interval,
+        "payload_size_deviation": max(0.0, payload_sigma),
+        "time_of_day_sin": sin_hour,
+        "time_of_day_cos": cos_hour,
+        "query_burst_count": max(1, int(burst)),
+        "label": 0 if kind == "normal" else 1,
+        "attack_type": kind,
+    }
+
+
+def _generate_temporal_samples(kind, count, seed):
+    """Generate independent windows whose features share realistic correlations."""
+    rng = random.Random(seed)
+    samples = []
+    for _ in range(count):
+        sample = _temporal_sample(kind, rng)
+        # Keep a small, bounded measurement error without violating invariants.
+        sample = _add_feature_jitter(sample, rng, noise_scale=0.04)
+        sample["time_of_day_sin"] = max(-1.0, min(1.0, sample["time_of_day_sin"]))
+        sample["time_of_day_cos"] = max(-1.0, min(1.0, sample["time_of_day_cos"]))
+        samples.append(sample)
+    return samples
 
 
 def _add_feature_jitter(sample, rng, noise_scale=0.10):
@@ -425,35 +503,40 @@ def _inject_ambiguous_samples(n_samples=150, seed=777):
         }
 
         sample = _add_feature_jitter(sample, rng, noise_scale=0.15)
+        sample["time_of_day_sin"] = max(-1.0, min(1.0, sample["time_of_day_sin"]))
+        sample["time_of_day_cos"] = max(-1.0, min(1.0, sample["time_of_day_cos"]))
         samples.append(sample)
 
     return samples
 
 
 def generate_full_dataset(
-    n_normal=3000,
-    n_replay=300,
-    n_flood=300,
-    n_epoch=300,
-    n_sybil=300,
-    n_probing=300,
-    n_ambiguous=150,
+    n_normal=30000,
+    n_replay=1000,
+    n_flood=1000,
+    n_epoch=1000,
+    n_sybil=1000,
+    n_probing=1000,
+    n_ambiguous=5000,
     label_noise_rate=0.025,
     seed=42,
 ):
     """
     Generate the complete labeled training dataset (v2 — noisy).
 
-    Default: 3000 normal + 1500 attack + 150 ambiguous = 4650 total samples.
+    Default: 40,000 varied samples:
+      20,000 normal + 15,000 attack + 5,000 ambiguous.
+    The larger, overlapping dataset reduces memorization and makes the
+    classifier work across borderline behavior instead of a few easy cases.
     Then ~2.5% label noise is injected on top.
     """
     all_samples = []
-    all_samples.extend(generate_normal_traffic(n_normal, seed))
-    all_samples.extend(generate_replay_attack(n_replay, seed + 100))
-    all_samples.extend(generate_flood_attack(n_flood, seed + 200))
-    all_samples.extend(generate_epoch_manipulation(n_epoch, seed + 300))
-    all_samples.extend(generate_sybil_attack(n_sybil, seed + 400))
-    all_samples.extend(generate_probing_attack(n_probing, seed + 500))
+    all_samples.extend(_generate_temporal_samples("normal", n_normal, seed))
+    all_samples.extend(_generate_temporal_samples("replay", n_replay, seed + 100))
+    all_samples.extend(_generate_temporal_samples("flood", n_flood, seed + 200))
+    all_samples.extend(_generate_temporal_samples("epoch_manipulation", n_epoch, seed + 300))
+    all_samples.extend(_generate_temporal_samples("sybil", n_sybil, seed + 400))
+    all_samples.extend(_generate_temporal_samples("probing", n_probing, seed + 500))
 
     # Add ambiguous borderline samples
     all_samples.extend(_inject_ambiguous_samples(n_ambiguous, seed + 777))

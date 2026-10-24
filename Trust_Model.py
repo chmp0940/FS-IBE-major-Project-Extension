@@ -196,7 +196,7 @@ class TrustManager:
             features_dict: Dict of behavioral features for this query
 
         Returns:
-            tuple: (is_anomaly: bool, anomaly_score: float, ml_decision: str)
+            tuple: (is_anomaly: bool, confidence: float, anomaly_score: float)
         """
         if self.ml_engine is None:
             return False, 0.0, "no_ml"
@@ -207,11 +207,11 @@ class TrustManager:
             # ML flagged as anomalous — penalize proportionally to confidence
             penalty = 1.0 + (confidence * 2.0)  # 1.0 to 3.0 penalty
             self.penalize(uid, penalty)
-            return True, anomaly_score, "anomaly"
+            return True, confidence, anomaly_score
         else:
             # ML says normal — small reward
             self.reward(uid, 0.3)
-            return False, anomaly_score, "normal"
+            return False, confidence, anomaly_score
 
     def log_query(self, uid, features_dict):
         """Log a query's features for historical tracking."""
@@ -333,6 +333,13 @@ class FeatureExtractor:
         if user_id in self._user_state:
             del self._user_state[user_id]
 
+    def record_signature_result(self, user_id, sig_valid):
+        """Record verification for the most recently extracted query."""
+        state = self._user_state[user_id]
+        state["sig_results"].append(bool(sig_valid))
+        if len(state["sig_results"]) > 50:
+            state["sig_results"] = state["sig_results"][-50:]
+
 
 # --------------------------------------------
 # Query + Validator (README: Q = { EncryptedKeyword, Signature, Epoch_ID })
@@ -381,11 +388,16 @@ class QueryValidator:
         ml_flagged = False
         if self.feature_extractor is not None and self.tm.ml_engine is not None:
             features = self.feature_extractor.extract(user_id, q)
-            ml_flagged, anomaly_score, ml_decision = self.tm.ml_score(user_id, features)
+            ml_flagged, ml_confidence, anomaly_score = self.tm.ml_score(user_id, features)
             self.tm.log_query(user_id, features)
 
-            # If ML is very confident it's an attack AND trust is already low, reject early
-            if ml_flagged and self.tm.get_score(user_id) < 2.0:
+            # A high-confidence behavioral anomaly is rejected even when its
+            # signature is valid; authentication alone cannot establish safe
+            # behavior. Lower-confidence anomalies are penalized and checked
+            # normally to avoid rejecting legitimate edge-case traffic.
+            if ml_flagged and (
+                ml_confidence >= 0.7 or self.tm.get_score(user_id) < 2.0
+            ):
                 return False
 
         # Step 3: Signature verification (always runs)
@@ -400,7 +412,7 @@ class QueryValidator:
 
             # Update feature extractor with sig result
             if self.feature_extractor is not None:
-                self.feature_extractor.extract(user_id, q, sig_valid=False)
+                self.feature_extractor.record_signature_result(user_id, False)
 
             return False
 
@@ -412,7 +424,7 @@ class QueryValidator:
         # but we don't reject (signature is the ground truth for authentication)
 
         if self.feature_extractor is not None:
-            self.feature_extractor.extract(user_id, q, sig_valid=True)
+            self.feature_extractor.record_signature_result(user_id, True)
 
         return True
 
