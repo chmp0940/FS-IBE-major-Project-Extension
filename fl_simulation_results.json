@@ -1,0 +1,75 @@
+{
+  "rounds": [
+    {
+      "round": 1,
+      "epoch": 1,
+      "global_accuracy": 0.8322222222222222,
+      "global_precision": 0.7041095890410959,
+      "global_recall": 0.8566666666666667,
+      "global_f1": 0.7729323308270677,
+      "accepted_gateways": 3,
+      "rejected_gateways": 0,
+      "client_enc_time_s": 0.15664480021223426,
+      "client_sig_time_s": 0.22528989997226745,
+      "server_verify_time_s": 0.07540249999146909,
+      "server_decrypt_time_s": 0.0023198999697342515
+    },
+    {
+      "round": 2,
+      "epoch": 2,
+      "global_accuracy": 0.9133333333333333,
+      "global_precision": 0.8245614035087719,
+      "global_recall": 0.94,
+      "global_f1": 0.8785046728971962,
+      "accepted_gateways": 3,
+      "rejected_gateways": 1,
+      "client_enc_time_s": 0.1492471998790279,
+      "client_sig_time_s": 0.31878760014660656,
+      "server_verify_time_s": 0.07167919992934912,
+      "server_decrypt_time_s": 0.002571299788542092
+    },
+    {
+      "round": 3,
+      "epoch": 3,
+      "global_accuracy": 0.9455555555555556,
+      "global_precision": 0.8814589665653495,
+      "global_recall": 0.9666666666666667,
+      "global_f1": 0.9220985691573926,
+      "accepted_gateways": 3,
+      "rejected_gateways": 0,
+      "client_enc_time_s": 0.13156079989857972,
+      "client_sig_time_s": 0.40169850003439933,
+      "server_verify_time_s": 0.07528949994593859,
+      "server_decrypt_time_s": 0.0032038999488577247
+    },
+    {
+      "round": 4,
+      "epoch": 4,
+      "global_accuracy": 0.9611111111111111,
+      "global_precision": 0.9288025889967637,
+      "global_recall": 0.9566666666666667,
+      "global_f1": 0.9425287356321839,
+      "accepted_gateways": 3,
+      "rejected_gateways": 1,
+      "client_enc_time_s": 0.12644860008731484,
+      "client_sig_time_s": 0.31994939991272986,
+      "server_verify_time_s": 0.06633759988471866,
+      "server_decrypt_time_s": 0.0021494999527931213
+    },
+    {
+      "round": 5,
+      "epoch": 5,
+      "global_accuracy": 0.97,
+      "global_precision": 0.9627118644067797,
+      "global_recall": 0.9466666666666667,
+      "global_f1": 0.9546218487394958,
+      "accepted_gateways": 3,
+      "rejected_gateways": 0,
+      "client_enc_time_s": 0.1263558000791818,
+      "client_sig_time_s": 0.45070189994294196,
+      "server_verify_time_s": 0.062437500106170774,
+      "server_decrypt_time_s": 0.003034000052139163
+    }
+  ],
+  "forward_secrecy_verified": true
+}
