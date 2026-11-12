@@ -1,0 +1,43 @@
+{
+  "dataset": "training_data.csv (40,000 synthetic IoT query records)",
+  "features": [
+    "query_frequency",
+    "epoch_mismatch_rate",
+    "sig_failure_rate",
+    "inter_query_interval",
+    "payload_size_deviation",
+    "time_of_day_sin",
+    "time_of_day_cos",
+    "query_burst_count"
+  ],
+  "evaluation_metrics": [
+    "accuracy",
+    "precision",
+    "f1",
+    "fpr",
+    "fnr"
+  ],
+  "seeds": [
+    17,
+    42,
+    73
+  ],
+  "models_evaluated": [
+    "ML-Trust (Isolation Forest)",
+    "ML-Trust (Decision Tree)",
+    "ML-Trust (KNN)",
+    "ML-Trust (SVM)",
+    "ML-Trust (MLP)",
+    "ML-Trust (Random Forest)",
+    "ML-Trust (Proposed Ensemble)",
+    "TAZTID-MMTA (Paper 1)",
+    "TEAD (Paper 2)"
+  ],
+  "packages": {
+    "python": "3.12.6",
+    "numpy": "1.26.3",
+    "pandas": "2.1.4",
+    "scikit_learn": "1.9.1"
+  },
+  "platform": "Windows-11-10.0.26200-SP0"
+}
