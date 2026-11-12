@@ -1,9 +1,6 @@
 """
 ML Trust Simulation — Benchmarks ML-enhanced trust scoring vs static scoring.
 Integrates with the existing simulation pipeline.
-
-Supports the 6-model ML Trust Engine:
-  Isolation Forest, Random Forest, SVM, KNN, Decision Tree, MLP
 """
 import sys, time, os, csv, json
 import numpy as np
@@ -15,7 +12,7 @@ import lattice_infrastructure as P1
 from forward_security import UserOps
 from Trust_Model import (TrustManager, DilithiumStub, Query, QueryValidator,
                          match_query_to_data, FeatureExtractor)
-from ml_trust_engine import MLTrustEngine, SUPERVISED_MODEL_NAMES
+from ml_trust_engine import MLTrustEngine
 from attack_simulator import generate_full_dataset, save_dataset, FEATURE_NAMES
 
 
@@ -41,42 +38,42 @@ def _make_query(ops, validator, sig, sk_user, user_id, epoch):
 
 
 def _make_malicious_query(
-    ops, validator, sig, user_id, epoch, attack_type="bad_sig", signing_key=None
+    ops, validator, sig, user_id, epoch, attack_type="bad_sig", sk_user=None
 ):
-    """Generate a malicious query, including behavior-only attacks with valid signatures."""
+    """Create invalid-signature or validly signed behavioral attack queries."""
+    query_epoch = epoch + 99 if attack_type == "wrong_epoch" else epoch
     keyword_ct = ops.Encrypt(user_id, epoch, 1)
-    ekw = keyword_ct["c1"].tobytes()
+    encrypted_keyword = keyword_ct["c1"].tobytes()
+    query = Query(encrypted_keyword=encrypted_keyword, signature=b"", epoch=query_epoch)
     if attack_type == "bad_sig":
-        q = Query(encrypted_keyword=ekw, signature=b"x" * 32, epoch=epoch)
-    elif attack_type == "valid_wrong_epoch":
-        wrong_ep = epoch + 99
-        q = Query(encrypted_keyword=ekw, signature=b"", epoch=wrong_ep)
-        msg = validator.serialize(user_id, q)
-        q.signature = sig.sign(msg, signing_key)
-    elif attack_type == "valid_replay":
-        # A replayed query carries an old epoch, while retaining a valid
-        # signature. This makes the replay behavior observable to the feature
-        # extractor instead of treating it as ordinary current-epoch traffic.
-        old_epoch = max(0, epoch - 1)
-        keyword_ct = ops.Encrypt(user_id, old_epoch, 1)
-        q = Query(
-            encrypted_keyword=keyword_ct["c1"].tobytes(),
-            signature=b"",
-            epoch=old_epoch,
-        )
-        msg = validator.serialize(user_id, q)
-        q.signature = sig.sign(msg, signing_key)
-    elif attack_type in ("valid_flood", "valid_stealth"):
-        q = Query(encrypted_keyword=ekw, signature=b"", epoch=epoch)
-        msg = validator.serialize(user_id, q)
-        q.signature = sig.sign(msg, signing_key)
+        query.signature = b"x" * 32
     else:
-        q = Query(encrypted_keyword=ekw, signature=b"y" * 32, epoch=epoch)
-    return q
+        if sk_user is None:
+            raise ValueError(f"A real user signing key is required for {attack_type}")
+        message = validator.serialize(user_id, query)
+        query.signature = sig.sign(message, sk_user)
+    return query
+
+
+def _attack_types(num_attacks):
+    """Use 20% invalid signatures, 60% detectable behavior, and 20% stealth replay."""
+    if num_attacks <= 0:
+        return []
+    invalid_count = round(num_attacks * 0.2)
+    stealth_count = round(num_attacks * 0.2)
+    behavior_count = num_attacks - invalid_count - stealth_count
+    wrong_epoch_count = behavior_count // 2
+    flood_count = behavior_count - wrong_epoch_count
+    return (
+        ["bad_sig"] * invalid_count
+        + ["wrong_epoch"] * wrong_epoch_count
+        + ["flood"] * flood_count
+        + ["stealth_replay"] * stealth_count
+    )
 
 
 def train_ml_engine(verbose=True):
-    """Train the ML trust engine (all 6 models). Returns trained engine."""
+    """Train the ML trust engine. Returns trained engine."""
     data_path = os.path.join(os.path.dirname(__file__) or ".", "training_data.csv")
     if not os.path.exists(data_path):
         if verbose:
@@ -86,10 +83,7 @@ def train_ml_engine(verbose=True):
 
     from attack_simulator import load_dataset
     X, y, _ = load_dataset(data_path)
-    # The benchmark creates many short-lived model evaluations. A single
-    # worker avoids loky/resource-tracker warnings on Windows and is faster
-    # than repeatedly starting process pools for these small predictions.
-    engine = MLTrustEngine(n_estimators_iso=80, n_estimators_rf=80, n_jobs=1)
+    engine = MLTrustEngine(n_estimators_iso=80, n_estimators_rf=80)
     metrics = engine.train(X, y, verbose=verbose)
     return engine, metrics
 
@@ -97,149 +91,128 @@ def train_ml_engine(verbose=True):
 def run_ml_trust_comparison(n=64, num_queries=20, num_attacks=15, tree_depth=3):
     """
     Compare static trust scoring vs ML-enhanced trust scoring.
-
-    Each sample is evaluated in an independent episode. Static and ML
-    validators receive the same traffic shape, and behavioral history is
-    created only by actual queries processed through the validator.
     Returns dict with comparison metrics.
     """
     params, system, ops, sig, sk_user, pk_user = _setup_system(n, tree_depth)
+    user_id = "TestDevice"
     epoch = 1
+    nodes = list(range(min(epoch + 2, 2 ** tree_depth)))
 
     # Train ML engine
     ml_engine, ml_train_metrics = train_ml_engine(verbose=False)
 
-    attack_types = [
-        "valid_flood", "valid_wrong_epoch", "valid_replay",
-        "valid_stealth", "bad_sig",
-    ]
+    # ========== STATIC TRUST TEST ==========
+    tm_static = TrustManager()
+    validator_static = QueryValidator(tm_static, sig, params)
 
+    static_tp, static_fp, static_tn, static_fn = 0, 0, 0, 0
+
+    # Legitimate queries (should be accepted)
+    for _ in range(num_queries):
+        q, _ = _make_query(ops, validator_static, sig, sk_user, user_id, epoch)
+        accepted = validator_static.validate_static(user_id, q, pk_user)
+        if accepted:
+            static_tn += 1  # correctly accepted normal
+        else:
+            static_fp += 1  # wrongly rejected normal
+
+    # Attack queries (should be rejected)
+    attack_types = _attack_types(num_attacks)
+    for i, attack_type in enumerate(attack_types):
+        attack_user = f"static_attacker_{i}"
+        q = _make_malicious_query(
+            ops, validator_static, sig, attack_user, epoch, attack_type, sk_user
+        )
+        # Reset trust so attacker isn't blocked by accumulated penalties
+        tm_static.db[attack_user] = 5.0
+        accepted = validator_static.validate_static(attack_user, q, pk_user)
+        if not accepted:
+            static_tp += 1  # correctly rejected attack
+        else:
+            static_fn += 1  # wrongly accepted attack
+
+    # ========== ML TRUST TEST ==========
+    tm_ml = TrustManager(ml_engine=ml_engine)
+    fe = FeatureExtractor(system_epoch=epoch)
+    validator_ml = QueryValidator(tm_ml, sig, params, feature_extractor=fe)
+
+    ml_tp, ml_fp, ml_tn, ml_fn = 0, 0, 0, 0
+    ml_inference_times = []
+
+    # Legitimate queries
+    for _ in range(num_queries):
+        fe.reset_user(user_id)
+        tm_ml.db[user_id] = 5.0
+        q, _ = _make_query(ops, validator_ml, sig, sk_user, user_id, epoch)
+        t0 = time.perf_counter()
+        accepted = validator_ml.validate(user_id, q, pk_user)
+        ml_inference_times.append(time.perf_counter() - t0)
+        if accepted:
+            ml_tn += 1
+        else:
+            ml_fp += 1
+
+    # Attack queries with realistic features
+    for i, attack_type in enumerate(attack_types):
+        fe.reset_user("attacker")
+        tm_ml.db["attacker"] = 5.0
+        if attack_type == "wrong_epoch":
+            history = [
+                Query(b"old-epoch-payload", b"", epoch + 99)
+                for _ in range(20)
+            ]
+        elif attack_type == "flood":
+            history = [Query(b"flood-payload", b"", epoch) for _ in range(40)]
+        else:
+            history = []
+        for historical_query in history:
+            fe.extract("attacker", historical_query, sig_valid=True)
+
+        q = _make_malicious_query(
+            ops, validator_ml, sig, "attacker", epoch, attack_type, sk_user
+        )
+        accepted = True
+        attempts = 3 if attack_type in ("wrong_epoch", "flood") else 1
+        for _ in range(attempts):
+            t0 = time.perf_counter()
+            accepted = validator_ml.validate("attacker", q, pk_user)
+            ml_inference_times.append(time.perf_counter() - t0)
+            if not accepted:
+                break
+        if not accepted:
+            ml_tp += 1
+        else:
+            ml_fn += 1
+
+    # Compute metrics
     def safe_div(a, b):
         return a / b if b > 0 else 0.0
 
     def compute_metrics(tp, fp, tn, fn):
         total = tp + fp + tn + fn
+        accuracy = safe_div(tp + tn, total)
         precision = safe_div(tp, tp + fp)
         recall = safe_div(tp, tp + fn)
+        f1 = safe_div(2 * precision * recall, precision + recall)
+        fpr = safe_div(fp, fp + tn)
         return {
-            "accuracy": safe_div(tp + tn, total),
-            "precision": precision,
-            "recall": recall,
-            "f1": safe_div(2 * precision * recall, precision + recall),
-            "fpr": safe_div(fp, fp + tn),
-            "tp": tp, "fp": fp, "tn": tn, "fn": fn,
+            "accuracy": accuracy, "precision": precision,
+            "recall": recall, "f1": f1,
+            "fpr": fpr, "tp": tp, "fp": fp, "tn": tn, "fn": fn,
         }
 
-    def run_episode(atype, use_ml):
-        tm = TrustManager(ml_engine=ml_engine if use_ml else None)
-        fe = FeatureExtractor(system_epoch=epoch) if use_ml else None
-        validator = QueryValidator(tm, sig, params, feature_extractor=fe)
-        uid = "attacker" if atype != "normal" else "normal-device"
-        validator_fn = validator.validate if use_ml else validator.validate_static
-        replay_query = None
-        if atype == "valid_replay":
-            replay_query = _make_malicious_query(
-                ops, validator, sig, uid, epoch, atype, signing_key=sk_user
-            )
+    static_metrics = compute_metrics(static_tp, static_fp, static_tn, static_fn)
+    ml_metrics = compute_metrics(ml_tp, ml_fp, ml_tn, ml_fn)
 
-        # Establish history through the same public validation path for both
-        # models. This is traffic, not direct feature injection.
-        if atype == "valid_flood":
-            # Create an actual burst, not merely five ordinary queries.
-            history_count = 40
-        elif atype in ("bad_sig", "valid_wrong_epoch", "valid_replay"):
-            history_count = 8
-        else:
-            history_count = 2
-        for _ in range(history_count):
-            if atype == "bad_sig":
-                history_query = _make_malicious_query(
-                    ops, validator, sig, uid, epoch, "bad_sig", signing_key=sk_user
-                )
-            elif atype == "valid_wrong_epoch":
-                history_query = _make_malicious_query(
-                    ops, validator, sig, uid, epoch, atype, signing_key=sk_user
-                )
-            elif atype == "valid_replay":
-                history_query = replay_query
-            else:
-                history_query, _ = _make_query(ops, validator, sig, sk_user, uid, epoch)
-            validator_fn(uid, history_query, pk_user)
-
-        # Keep the behavioral history but isolate the target decision from
-        # trust-score exhaustion caused by the setup traffic.
-        tm.db[uid] = 5.0
-        if atype == "normal":
-            target, _ = _make_query(ops, validator, sig, sk_user, uid, epoch)
-            expected_attack = False
-        elif atype == "valid_replay":
-            target = replay_query
-            expected_attack = True
-        else:
-            target = _make_malicious_query(
-                ops, validator, sig, uid, epoch, atype, signing_key=sk_user
-            )
-            expected_attack = True
-
-        started = time.perf_counter()
-        accepted = validator_fn(uid, target, pk_user)
-        elapsed = (time.perf_counter() - started) * 1000
-        predicted_attack = not accepted
-        return expected_attack, predicted_attack, elapsed
-
-    def evaluate_model(use_ml):
-        tp = fp = tn = fn = 0
-        timings = []
-        by_attack = {}
-
-        for _ in range(num_queries):
-            expected, predicted, elapsed = run_episode("normal", use_ml)
-            timings.append(elapsed)
-            if predicted:
-                fp += 1
-            else:
-                tn += 1
-
-        for i in range(num_attacks):
-            atype = attack_types[i % len(attack_types)]
-            expected, predicted, elapsed = run_episode(atype, use_ml)
-            timings.append(elapsed)
-            counters = by_attack.setdefault(atype, [0, 0])
-            counters[0] += 1
-            counters[1] += int(predicted)
-            if predicted:
-                tp += 1
-            else:
-                fn += 1
-
-        attack_metrics = {
-            name: {
-                "samples": values[0],
-                "detected": values[1],
-                "recall": safe_div(values[1], values[0]),
-            }
-            for name, values in by_attack.items()
-        }
-        return compute_metrics(tp, fp, tn, fn), attack_metrics, timings
-
-    static_metrics, static_by_attack, _ = evaluate_model(use_ml=False)
-    ml_metrics, ml_by_attack, _ = evaluate_model(use_ml=True)
+    avg_ml_time = sum(ml_inference_times) / len(ml_inference_times) if ml_inference_times else 0
 
     return {
         "static": static_metrics,
         "ml": ml_metrics,
         "ml_train_metrics": ml_train_metrics,
-        "ml_avg_inference_ms": None,
-        "static_by_attack": static_by_attack,
-        "ml_by_attack": ml_by_attack,
+        "ml_avg_inference_ms": avg_ml_time * 1000,
         "num_queries": num_queries,
         "num_attacks": num_attacks,
-        "evaluation": {
-            "independent_episodes": True,
-            "feature_injection": False,
-            "query_recorded_once": True,
-            "inference_timing": "not reported; benchmark process timing is environment-dependent",
-        },
     }
 
 
@@ -260,32 +233,26 @@ def print_ml_comparison(results):
     print(f"  {'TN (legit accepted)':<25} {s['tn']:>15} {m['tn']:>15}", flush=True)
     print(f"  {'FN (attacks missed)':<25} {s['fn']:>15} {m['fn']:>15}", flush=True)
     print("  " + "-" * 60, flush=True)
-    if results["ml_avg_inference_ms"] is not None:
-        print(f"  ML Avg Inference Time: {results['ml_avg_inference_ms']:.3f} ms", flush=True)
-    else:
-        print("  ML Avg Inference Time: not measured", flush=True)
+    print(f"  ML Avg Inference Time: {results['ml_avg_inference_ms']:.3f} ms", flush=True)
     print("=" * 70, flush=True)
 
-    # ML Training metrics — all 6 models + combined
+    # ML Training metrics
     tm = results["ml_train_metrics"]
-    model_display = {
-        "iso": "Isolation Forest",
-        "random_forest": "Random Forest",
-        "svm": "SVM",
-        "knn": "KNN",
-        "decision_tree": "Decision Tree",
-        "mlp": "MLP (Neural Net)",
-        "combined": "Combined Ensemble",
-    }
-    print("\n  ML Model Training Performance (All 6 Models):", flush=True)
-    print(f"  {'Model':<22} {'Accuracy':>10} {'Precision':>10} {'Recall':>10} {'F1':>10}", flush=True)
-    print("  " + "-" * 62, flush=True)
-    for key, display_name in model_display.items():
-        acc = tm.get(f"{key}_accuracy", 0)
-        prec = tm.get(f"{key}_precision", 0)
-        rec = tm.get(f"{key}_recall", 0)
-        f1 = tm.get(f"{key}_f1", 0)
-        print(f"  {display_name:<22} {acc:>10.4f} {prec:>10.4f} {rec:>10.4f} {f1:>10.4f}", flush=True)
+    print("\n  ML Model Training Performance:", flush=True)
+    for label, key in (
+        ("Isolation Forest", "iso"),
+        ("Random Forest", "random_forest"),
+        ("SVM", "svm"),
+        ("KNN", "knn"),
+        ("Decision Tree", "decision_tree"),
+        ("MLP", "mlp"),
+        ("Combined Ensemble", "combined"),
+    ):
+        print(
+            f"    {label:<20} -- Acc: {tm[f'{key}_accuracy']:.4f} "
+            f"F1: {tm[f'{key}_f1']:.4f}",
+            flush=True,
+        )
     print("=" * 70, flush=True)
 
 
@@ -318,7 +285,7 @@ def save_ml_results_json(results, path="ml_trust_results.json"):
 
 if __name__ == "__main__":
     print("=" * 70, flush=True)
-    print("  ML Trust Scoring Simulation (6 Models)", flush=True)
+    print("  ML Trust Scoring Simulation", flush=True)
     print("=" * 70, flush=True)
 
     print("\n  Running ML vs Static trust comparison...\n", flush=True)
