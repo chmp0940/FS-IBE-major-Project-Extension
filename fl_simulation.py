@@ -156,46 +156,114 @@ def run_federated_simulation(n_lattice=64, num_rounds=5, tree_depth=3):
         writer.writerows(round_history)
 
     with open("fl_simulation_results.json", "w", encoding="utf-8") as f:
-        json.dump({"rounds": round_history, "forward_secrecy_verified": fs_verified}, f, indent=2)
+        json.dump({
+            "rounds": round_history,
+            "forward_secrecy_verified": fs_verified,
+            "dataset_samples": int(len(y)),
+        }, f, indent=2)
 
     # 5. Generate FL Convergence & Crypto Latency Plot
-    try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
 
-        rounds = [r["round"] for r in round_history]
-        accs = [r["global_accuracy"] for r in round_history]
-        f1s = [r["global_f1"] for r in round_history]
-        enc_t = [r["client_enc_time_s"] for r in round_history]
-        ver_t = [r["server_verify_time_s"] + r["server_decrypt_time_s"] for r in round_history]
+    rounds = [r["round"] for r in round_history]
+    accs = [r["global_accuracy"] for r in round_history]
+    f1s = [r["global_f1"] for r in round_history]
+    enc_t = [r["client_enc_time_s"] for r in round_history]
+    sign_t = [r["client_sig_time_s"] for r in round_history]
+    verify_t = [r["server_verify_time_s"] for r in round_history]
+    decrypt_t = [r["server_decrypt_time_s"] for r in round_history]
+    x = np.arange(len(rounds))
 
-        fig, axes = plt.subplots(1, 2, figsize=(13, 5))
-        axes[0].plot(rounds, accs, "g-o", linewidth=2, label="Global Accuracy")
-        axes[0].plot(rounds, f1s, "b-s", linewidth=2, label="Global F1 Score")
-        axes[0].set_xlabel("Federated Learning Round (Epoch t)")
-        axes[0].set_ylabel("Score")
-        axes[0].set_ylim(0.7, 1.05)
-        axes[0].set_title("Federated Global Model Convergence", fontweight="bold")
-        axes[0].grid(True, alpha=0.3)
-        axes[0].legend()
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    axes[0].plot(rounds, accs, "g-o", linewidth=2, label="Global Accuracy")
+    axes[0].plot(rounds, f1s, "b-s", linewidth=2, label="Global F1 Score")
+    axes[0].set_xlabel("Federated Learning Round (Epoch t)")
+    axes[0].set_ylabel("Score")
+    axes[0].set_ylim(0.0, 1.05)
+    axes[0].set_title("Federated Global Model Convergence", fontweight="bold")
+    axes[0].grid(True, alpha=0.3)
+    axes[0].legend()
 
-        x = np.arange(len(rounds))
-        w = 0.35
-        axes[1].bar(x - w/2, enc_t, w, label="Gateway Encrypt + Sign (s)", color="#3498db")
-        axes[1].bar(x + w/2, ver_t, w, label="Server Verify + Decrypt (s)", color="#2ecc71")
-        axes[1].set_xticks(x)
-        axes[1].set_xticklabels([f"R{r} (t={r})" for r in rounds])
-        axes[1].set_ylabel("Time (seconds)")
-        axes[1].set_title("Post-Quantum FL Cryptographic Overhead", fontweight="bold")
-        axes[1].grid(True, alpha=0.3)
-        axes[1].legend()
+    width = 0.35
+    axes[1].bar(x - width / 2, enc_t, width, label="Client Encrypt (s)", color="#3498db")
+    axes[1].bar(x + width / 2, sign_t, width, label="Client Sign (s)", color="#9b59b6")
+    axes[1].set_xticks(x)
+    axes[1].set_xticklabels([f"R{r} (t={r})" for r in rounds])
+    axes[1].set_ylabel("Time (seconds)")
+    axes[1].set_title("Client Post-Quantum Overhead", fontweight="bold")
+    axes[1].grid(True, alpha=0.3)
+    axes[1].legend()
+    plt.tight_layout()
+    plt.savefig("fl_convergence.png", bbox_inches="tight")
+    plt.close(fig)
+    print("  Saved plot: fl_convergence.png", flush=True)
 
-        plt.tight_layout()
-        plt.savefig("fl_convergence.png", bbox_inches="tight")
-        print("  Saved plot: fl_convergence.png", flush=True)
-    except Exception as e:
-        print(f"  Plot note: {e}", flush=True)
+    fig, axes = plt.subplots(1, 3, figsize=(21, 6))
+    for metric, label, marker in (
+        ("global_accuracy", "Accuracy", "o"),
+        ("global_precision", "Precision", "s"),
+        ("global_recall", "Recall", "^"),
+        ("global_f1", "F1", "D"),
+    ):
+        axes[0].plot(
+            rounds, [row[metric] for row in round_history],
+            marker=marker, linewidth=2, label=label,
+        )
+    axes[0].set_title("Global Model Convergence")
+    axes[0].set_xlabel("Federated Learning Round")
+    axes[0].set_ylabel("Score")
+    axes[0].set_xticks(rounds)
+    axes[0].set_ylim(0.0, 1.0)
+    axes[0].grid(True, alpha=0.3)
+    axes[0].legend()
+
+    timings = (
+        (enc_t, "Client fs-IBE Encrypt"),
+        (sign_t, "Client Dilithium-3 Sign"),
+        (verify_t, "Server Dilithium-3 Verify"),
+        (decrypt_t, "Server fs-IBE Decrypt"),
+    )
+    bar_width = 0.2
+    for index, (values, label) in enumerate(timings):
+        axes[1].bar(
+            x + (index - 1.5) * bar_width, values, bar_width, label=label
+        )
+    axes[1].set_title("Post-Quantum Cryptographic Overhead")
+    axes[1].set_xlabel("Federated Learning Round")
+    axes[1].set_ylabel("Time (seconds)")
+    axes[1].set_xticks(x)
+    axes[1].set_xticklabels([f"Round {round_number}" for round_number in rounds])
+    axes[1].grid(axis="y", alpha=0.3)
+    axes[1].legend(fontsize=8)
+
+    axes[2].bar(
+        x - bar_width / 2,
+        [row["accepted_gateways"] for row in round_history],
+        bar_width,
+        label="Accepted",
+        color="#2ecc71",
+    )
+    axes[2].bar(
+        x + bar_width / 2,
+        [row["rejected_gateways"] for row in round_history],
+        bar_width,
+        label="Rejected / Poisoning",
+        color="#e74c3c",
+    )
+    axes[2].set_title("Gateway Acceptance vs Poisoning Rejection")
+    axes[2].set_xlabel("Federated Learning Round")
+    axes[2].set_ylabel("Gateway Updates")
+    axes[2].set_xticks(x)
+    axes[2].set_xticklabels([f"Round {round_number}" for round_number in rounds])
+    axes[2].grid(axis="y", alpha=0.3)
+    axes[2].legend()
+    fig.suptitle("Federated Learning + Post-Quantum Security", fontsize=15, fontweight="bold")
+    fig.tight_layout()
+    plt.savefig("fl_detailed_analysis.png", bbox_inches="tight")
+    plt.close(fig)
+    print("  Saved plot: fl_detailed_analysis.png", flush=True)
 
     print("  Saved: FL_Results_Report.csv and fl_simulation_results.json", flush=True)
     return round_history
