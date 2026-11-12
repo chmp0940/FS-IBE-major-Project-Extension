@@ -7,9 +7,7 @@ Implements the trust verification model from:
   - Modification: "Novel Approach: Secure query-based trust model"
 
 Implements:
-  - Post-quantum signature interface (DilithiumSigner — HMAC-SHA256 keyed signer;
-    replaces the old SHA-256-only stub which was trivially forgeable).
-    For full post-quantum compliance, swap in a real Dilithium-3 library.
+  - Real CRYSTALS-Dilithium-3 / ML-DSA-65 signatures via dilithium-py.
   - TrustDatabase logic: TrustManager with UserID -> Score, CheckTrust(Score >= 0), reward/penalize.
   - ML-Enhanced Trust: When MLTrustEngine is available, queries are also evaluated
     against behavioral features (query frequency, epoch mismatches, etc.) for
@@ -19,7 +17,6 @@ Implements:
   - Match logic: compare User Query vs. stored data tags (epoch, optional keyword).
 """
 import hashlib
-import hmac
 import os
 import time
 from dataclasses import dataclass, field
