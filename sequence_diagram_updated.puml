@@ -1,0 +1,69 @@
+@startuml
+title IoT Data Sharing with fs-IBE and Dilithium-3 Trust Verification
+
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+skinparam ParticipantPadding 20
+skinparam sequenceDividerBackgroundColor #E6E6E6
+skinparam sequenceDividerBorderColor #999999
+
+actor "Regulatory Authority (TA)" as TA
+participant "IoT Device" as Device
+actor "User" as User
+participant "Access Control & Trust Manager" as Trust
+participant "Storage" as Storage
+participant "IoT Edge Gateway(s)" as Gateway
+
+== 1. System Setup & Key Generation (IBE) ==
+TA -> TA: 1 Generate Public Parameters & Master Trapdoor
+TA -> Device: 2 Publish Public Parameters (A)
+TA -> User: 3 Generate & Send Initial Secret Key (sk) based on User ID
+
+== 2. Data Production & Storage ==
+Device -> Device: 4 Encrypt Raw Data via FS-IBE (using User ID & current Epoch)
+Device -> Storage: 5 Upload Encrypted Data
+
+== Federated Learning: Trust Model Update ==
+loop Each federated training round
+    Gateway -> Gateway: 5.1 Train local model on gateway traffic (raw data stays local)
+    Gateway -> Gateway: 5.2 Quantize and encrypt local model update via FS-IBE\n(Aggregator ID & current Epoch)
+    Gateway -> Gateway: 5.3 Sign update metadata and ciphertext digest via Dilithium-3
+    Gateway -> TA: 5.4 Submit encrypted, signed update, epoch, and sample count
+    TA -> TA: 5.5 Check gateway trust, epoch, and Dilithium-3 signature
+    alt Update Invalid or Gateway Untrusted
+        TA -> TA: 5.6 Reject update and penalize gateway trust
+    else Update Valid
+        TA -> TA: 5.7 Decrypt valid updates and aggregate using FedAvg
+        TA -> Trust: 5.8 Provide updated global model for ML trust scoring
+        TA -> Gateway: 5.9 Distribute updated global model to gateways
+    end
+end
+
+== 3. Data Request & Verification ==
+User -> User: 6 Create Query (Encrypted Keyword + Epoch)
+User -> User: 7 Sign Query via Dilithium-3
+User -> Trust: 8 Submit Signed Query Request
+Trust -> Trust: 9 Check User Trust Score (TrustManager)
+Trust -> Trust: 9.1 Extract Query Behavior Features & Calculate ML Trust Score\n(using latest federated model)
+alt Trust Score < Threshold (Untrusted/Banned) or ML Early-Reject Condition
+    Trust --> User: 10 Immediate Rejection (Access Denied)
+else Trust Score >= Threshold
+    Trust -> Trust: 11 Verify Dilithium-3 Signature
+    alt Signature Valid
+        Trust -> Trust: 11.1 Adjust Trust Score based on Signature and ML Result
+    else Signature Invalid
+        Trust -> Trust: 11.1 Decrease Trust Score (Score - 1)
+        Trust --> User: 11.2 Query Rejected (Forged Signature)
+    end
+end
+
+== 4. Data Access & Decryption ==
+User -> Storage: 12 Fetch Data
+Storage --> User: 13 Encrypted Data
+User -> User: 14 Decrypt Data locally (using Epoch-specific Secret Key)
+
+== 5. Forward Security (Epoch Transition) ==
+TA -> Device: 15 Broadcast Epoch Tick (t -> t+1)
+User -> User: 16 Local Key Evolution (Update minimal cover, delete old keys)
+
+@enduml

@@ -1,0 +1,72 @@
+@startuml
+title System Flow Architecture: Forward-Secure Lattice-Based IBE for IoT
+caption Setup → Key Distribution → Data Encryption → Query & Trust Verification → Data Retrieval → Forward Security
+
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam componentStyle rectangle
+skinparam defaultFontName Arial
+skinparam ArrowFontName Arial
+skinparam ArrowFontSize 12
+skinparam packageBorderStyle dashed
+skinparam packageBackgroundColor white
+
+package "Data Producer\n(IoT Environment)" as Producer {
+  database "Raw Sensor Data" as Raw
+  component "IoT End Device" as Device
+  component "Edge Device" as Edge
+  component "IoT Edge Gateway\n(FL Client)" as Gateway #EAF2FA
+}
+
+package "Trust Manager Framework" as Framework {
+  cloud "Trusted System Infrastructure\nCentralized Authority" as Infrastructure #EAF6FC
+  component "Regulatory Authority (TA)\nKey generation · Epoch updates" as TA #F2E6F5
+  component "Access Control Gateway\nAuth coordination · Orchestrator" as Access #EAF2FA
+  component "Trust Manager & Verifier\nScore threshold · Dilithium-3 verify" as Trust #E7F3E8
+  component "ML Trust Scorer\nBehavior features · Anomaly score" as ML #E7F3E8
+  component "Encrypted Storage\nEpoch-bound fs-IBE ciphertexts" as Storage #F8E8E8
+  component "Federated Aggregator\nUpdate validation · FedAvg" as Aggregator #F2E6F5
+}
+
+package "Data Consumer\n(Authorized User)" as Consumer {
+  actor "User (Requester)" as User
+  component "Query Terminal" as Terminal #E8F8E8
+  component "Network Node" as Network #FFF0E5
+  component "Analytics Viewer" as Analytics #F5EAF7
+}
+
+' Preserve the original architecture flow and numbering.
+TA -[#79509A]-> Device : 1 MPK & Parameters
+Device -[#2878B5]-> Access : 2 Device Registration
+TA -[#4C8A56]-> User : 3 FS Epoch Key (sk)
+Edge -[#C47A43]-> Storage : 4 Encrypted Upload (fs-IBE)
+TA -[#79509A]-> Analytics : 5 MPK & Parameters
+Terminal -[#2878B5]-> Trust : 6 Q = {Keyword, Signature, Epoch}
+' ML scoring is inserted into the existing query verification path.
+Trust -[#4C8A56]-> ML : 6.1 Query behavior features
+ML -[#4C8A56]-> Trust : 6.2 ML trust / anomaly score
+Trust -[#4C8A56]-> Terminal : 7 Verified / Trust Score Updated
+Storage -[#C47A43]-> Network : 8 Ciphertext; decrypt locally
+TA -[#777777,dashed]-> Device : 9 Epoch Update (t → t+1)
+TA -[#777777,dashed]-> User : 9 Epoch Update (t → t+1)
+
+Trust -[#B33A3A]-> Terminal : Reject: low score, early-reject anomaly,\nor invalid signature
+
+' Federated learning is shown as an update loop within the framework.
+Gateway -[#4C8A56]-> Gateway : 10 Train local model; keep raw traffic local
+Gateway -[#79509A]-> Aggregator : 11 Quantized update, fs-IBE encrypted\nand Dilithium-3 signed
+Aggregator -[#4C8A56]-> Aggregator : 12 Check gateway trust, epoch, signature;\nFedAvg accepted updates
+Aggregator -[#4C8A56]-> ML : 13 Publish aggregated model for scoring
+Aggregator -[#2878B5]-> Gateway : 14 Return global model and current epoch
+
+legend bottom
+  |= Line color |= Meaning |
+  |<#79509A> Purple | Setup / MPK / federated update protection |
+  |<#2878B5> Blue | Registration / query / model distribution |
+  |<#4C8A56> Green | Key / trust / ML scoring / aggregation |
+  |<#C47A43> Orange | Encryption / ciphertext retrieval |
+  |<#B33A3A> Red | Rejection / trust penalty |
+  |<#777777> Dashed gray | Epoch channel |
+endlegend
+@enduml

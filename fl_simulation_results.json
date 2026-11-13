@@ -3,73 +3,100 @@
     {
       "round": 1,
       "epoch": 1,
-      "global_accuracy": 0.8322222222222222,
-      "global_precision": 0.7041095890410959,
-      "global_recall": 0.8566666666666667,
-      "global_f1": 0.7729323308270677,
+      "global_accuracy": 0.8255,
+      "global_precision": 0.5725,
+      "global_recall": 0.2615,
+      "global_f1": 0.359,
       "accepted_gateways": 3,
       "rejected_gateways": 0,
-      "client_enc_time_s": 0.15664480021223426,
-      "client_sig_time_s": 0.22528989997226745,
-      "server_verify_time_s": 0.07540249999146909,
-      "server_decrypt_time_s": 0.0023198999697342515
+      "client_enc_time_s": 0.2559,
+      "client_sig_time_s": 0.2633,
+      "server_verify_time_s": 0.126,
+      "server_decrypt_time_s": 0.0047
     },
     {
       "round": 2,
       "epoch": 2,
-      "global_accuracy": 0.9133333333333333,
-      "global_precision": 0.8245614035087719,
-      "global_recall": 0.94,
-      "global_f1": 0.8785046728971962,
+      "global_accuracy": 0.8884,
+      "global_precision": 0.8558,
+      "global_recall": 0.4843,
+      "global_f1": 0.6185,
       "accepted_gateways": 3,
       "rejected_gateways": 1,
-      "client_enc_time_s": 0.1492471998790279,
-      "client_sig_time_s": 0.31878760014660656,
-      "server_verify_time_s": 0.07167919992934912,
-      "server_decrypt_time_s": 0.002571299788542092
+      "client_enc_time_s": 0.2131,
+      "client_sig_time_s": 0.5217,
+      "server_verify_time_s": 0.1138,
+      "server_decrypt_time_s": 0.004
     },
     {
       "round": 3,
       "epoch": 3,
-      "global_accuracy": 0.9455555555555556,
-      "global_precision": 0.8814589665653495,
-      "global_recall": 0.9666666666666667,
-      "global_f1": 0.9220985691573926,
+      "global_accuracy": 0.9075,
+      "global_precision": 0.8896,
+      "global_recall": 0.5766,
+      "global_f1": 0.6997,
       "accepted_gateways": 3,
       "rejected_gateways": 0,
-      "client_enc_time_s": 0.13156079989857972,
-      "client_sig_time_s": 0.40169850003439933,
-      "server_verify_time_s": 0.07528949994593859,
-      "server_decrypt_time_s": 0.0032038999488577247
+      "client_enc_time_s": 0.2044,
+      "client_sig_time_s": 0.199,
+      "server_verify_time_s": 0.1046,
+      "server_decrypt_time_s": 0.0041
     },
     {
       "round": 4,
       "epoch": 4,
-      "global_accuracy": 0.9611111111111111,
-      "global_precision": 0.9288025889967637,
-      "global_recall": 0.9566666666666667,
-      "global_f1": 0.9425287356321839,
+      "global_accuracy": 0.9181,
+      "global_precision": 0.9078,
+      "global_recall": 0.6254,
+      "global_f1": 0.7406,
       "accepted_gateways": 3,
       "rejected_gateways": 1,
-      "client_enc_time_s": 0.12644860008731484,
-      "client_sig_time_s": 0.31994939991272986,
-      "server_verify_time_s": 0.06633759988471866,
-      "server_decrypt_time_s": 0.0021494999527931213
+      "client_enc_time_s": 0.2044,
+      "client_sig_time_s": 0.6659,
+      "server_verify_time_s": 0.1312,
+      "server_decrypt_time_s": 0.0036
     },
     {
       "round": 5,
       "epoch": 5,
-      "global_accuracy": 0.97,
-      "global_precision": 0.9627118644067797,
-      "global_recall": 0.9466666666666667,
-      "global_f1": 0.9546218487394958,
+      "global_accuracy": 0.9345,
+      "global_precision": 0.8631,
+      "global_recall": 0.7719,
+      "global_f1": 0.815,
       "accepted_gateways": 3,
       "rejected_gateways": 0,
-      "client_enc_time_s": 0.1263558000791818,
-      "client_sig_time_s": 0.45070189994294196,
-      "server_verify_time_s": 0.062437500106170774,
-      "server_decrypt_time_s": 0.003034000052139163
+      "client_enc_time_s": 0.2474,
+      "client_sig_time_s": 0.7315,
+      "server_verify_time_s": 0.1438,
+      "server_decrypt_time_s": 0.0052
     }
   ],
-  "forward_secrecy_verified": true
+  "forward_secrecy_verified": true,
+  "evaluation": {
+    "dataset_rows": 40000,
+    "federated_rounds": 5,
+    "honest_gateways": 3,
+    "malicious_gateway_updates_rejected_rounds": [
+      2,
+      4
+    ],
+    "accepted_honest_gateways_each_round": 3,
+    "note": "Values copied from the updated notebook telemetry output; timings are environment-dependent."
+  },
+  "signature_sizes_bytes": {
+    "ml_dsa_65_public_key": 1952,
+    "ml_dsa_65_secret_key": 4032,
+    "ml_dsa_65_signature": 3309
+  },
+  "tamper_audit": {
+    "valid_update_verified": true,
+    "tampered_payload_verified": false,
+    "tampered_signature_verified": false
+  },
+  "forward_secrecy_audit": {
+    "epoch_1_ciphertext_decrypts_at_epoch_1": 1,
+    "server_epoch_after_evolution": 6,
+    "epoch_1_ciphertext_decrypts_at_epoch_6": null,
+    "past_update_remains_undecryptable": true
+  }
 }
